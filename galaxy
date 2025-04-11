@@ -1,0 +1,140 @@
+import pygame
+import math
+import numpy as np
+
+pygame.init()
+display = (1920, 1080)
+screen = pygame.display.set_mode(display, pygame.SCALED | pygame.RESIZABLE)
+pygame.display.set_caption('Galaxy Simulation')
+
+class Star:
+    def __init__(self, distance, angle, color, size):
+        self.distance = distance
+        self.angle = angle
+        self.color = color
+        self.size = size
+        self.speed = 2 / (distance ** 0.5)  # Stars closer to center move faster
+
+    def update(self, time):
+        # Differential rotation for more realistic spiral motion
+        self.angle += self.speed * time * (1.0 - 0.3 * math.log(self.distance/100))
+        # Add slight wobble to create more dynamic movement
+        wobble = 0.1 * math.sin(time * 2 + self.distance/100)
+        x = self.distance * math.cos(self.angle + wobble)
+        y = self.distance * math.sin(self.angle + wobble) * 0.2
+        return x, y
+
+class Camera:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.z = -1000
+        self.rot_x = 0
+        self.rot_y = 0
+
+    def move(self, keys):
+        speed = 10
+        rot_speed = 2
+
+        if keys[pygame.K_w]: self.z += speed
+        if keys[pygame.K_s]: self.z -= speed
+        if keys[pygame.K_a]: self.x -= speed
+        if keys[pygame.K_d]: self.x += speed
+        if keys[pygame.K_SPACE]: self.y -= speed
+        if keys[pygame.K_LSHIFT]: self.y += speed
+        if keys[pygame.K_LEFT]: self.rot_y -= rot_speed
+        if keys[pygame.K_RIGHT]: self.rot_y += rot_speed
+        if keys[pygame.K_UP]: self.rot_x = min(89, self.rot_x + rot_speed)
+        if keys[pygame.K_DOWN]: self.rot_x = max(-89, self.rot_x - rot_speed)
+
+    def transform_point(self, x, y):
+        scale = 1000 / (-self.z + 1000) if -self.z + 1000 > 0 else 0
+        if scale <= 0: return None
+        screen_x = 960 + (x - self.x) * scale
+        screen_y = 540 + (y - self.y) * scale
+        return screen_x, screen_y, scale
+
+def get_star_color(temp):
+    # Realistic star colors based on temperature
+    if temp < 0.2: return (255, 150, 100)  # Red
+    elif temp < 0.4: return (255, 200, 150)  # Orange
+    elif temp < 0.6: return (255, 255, 200)  # Yellow
+    elif temp < 0.8: return (200, 220, 255)  # White-blue
+    else: return (150, 170, 255)  # Blue
+
+# Create galaxy spiral arms
+stars = []
+for arm in range(6):  # 6 spiral arms for more complexity
+    base_angle = arm * math.pi / 3
+    for i in range(800):  # More stars per arm
+        distance = np.random.normal(400 + i, 30)
+        if distance < 0: continue
+        # Tighter spiral pattern
+        # Create more pronounced spiral arms
+        spiral_tightness = 0.5
+        arm_width = 0.2
+        angle = base_angle + spiral_tightness * math.log(distance/100) + np.random.normal(0, arm_width)
+        # Add some scatter perpendicular to the arm
+        scatter = np.random.normal(0, 20)
+        adjusted_distance = distance + scatter
+        # Varied star colors
+        temp = np.random.random()
+        color = get_star_color(temp)
+        size = np.random.uniform(1.5, 4 if temp > 0.8 else 3)
+        if adjusted_distance > 0:
+            stars.append(Star(adjusted_distance, angle, color, size))
+
+# Enhanced central bulge
+for i in range(2000):
+    distance = abs(np.random.normal(0, 150))
+    angle = np.random.uniform(0, math.pi * 2)
+    temp = np.random.random()
+    color = get_star_color(temp)
+    size = np.random.uniform(2, 5)
+    stars.append(Star(distance, angle, color, size))
+
+# Add dust lanes
+for i in range(1000):
+    distance = np.random.uniform(100, 800)
+    angle = np.random.uniform(0, math.pi * 2)
+    color = (20, 20, 30)
+    size = np.random.uniform(3, 6)
+    stars.append(Star(distance, angle, color, size))
+
+camera = Camera()
+clock = pygame.time.Clock()
+running = True
+
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+    keys = pygame.key.get_pressed()
+    camera.move(keys)
+
+    screen.fill((0, 0, 15))  # Very dark blue background
+
+    # Update and draw stars
+    time = pygame.time.get_ticks() * 0.0001
+    for star in stars:
+        x, y = star.update(time)
+        transformed = camera.transform_point(x, y)
+        if transformed:
+            screen_x, screen_y, scale = transformed
+            if 0 <= screen_x <= display[0] and 0 <= screen_y <= display[1]:
+                # Draw star with glow effect
+                size = star.size * scale
+                if size > 0.5:
+                    # Glow
+                    surf = pygame.Surface((int(size * 4), int(size * 4)), pygame.SRCALPHA)
+                    alpha_color = (*star.color, 50)
+                    pygame.draw.circle(surf, alpha_color, (int(size * 2), int(size * 2)), int(size * 2))
+                    screen.blit(surf, (int(screen_x - size * 2), int(screen_y - size * 2)))
+                    # Core
+                    pygame.draw.circle(screen, star.color, (int(screen_x), int(screen_y)), max(1, int(size)))
+
+    pygame.display.flip()
+    clock.tick(60)
+
+pygame.quit()
